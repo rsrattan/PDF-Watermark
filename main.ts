@@ -162,9 +162,14 @@ export default class MyPlugin extends Plugin {
 		}
 
 		const pdfBytes = await pdfDoc.save();
-		const fileName = `${title}.pdf`;
-		await this.app.vault.createBinary(fileName, pdfBytes);
-		new Notice(`PDF saved as ${fileName}`);
+		const blob = new Blob([pdfBytes], {type: 'application/pdf'});
+		const url = URL.createObjectURL(blob);
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = `${title}.pdf`;
+		link.click();
+		URL.revokeObjectURL(url);
+		new Notice(`PDF saved as ${title}.pdf`);
 	}
 
 	onunload() {
@@ -195,6 +200,8 @@ class SampleModal extends Modal {
 		contentEl.empty();
 	}
 }
+
+
 
 class SampleSettingTab extends PluginSettingTab {
 	plugin: MyPlugin;
