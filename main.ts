@@ -1,13 +1,22 @@
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 
 // Remember to rename these classes and interfaces!
 
 interface MyPluginSettings {
 	mySetting: string;
+	watermarkText: string;
+	watermarkAngle: number;
+	headerText: string;
+	footerText: string;
 }
 
 const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
+	mySetting: 'default',
+	watermarkText: 'Obsidian',
+	watermarkAngle: -45,
+	headerText: '',
+	footerText: ''
 }
 
 export default class MyPlugin extends Plugin {
@@ -65,6 +74,20 @@ export default class MyPlugin extends Plugin {
 			}
 		});
 
+		this.addCommand({
+			id: 'print-note-to-pdf',
+			name: 'Print current note to PDF with Watermark',
+			checkCallback: (checking: boolean) => {
+				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
+				if (markdownView && markdownView.file) {
+					if (!checking) {
+						this.createPdf(markdownView.file.basename, markdownView.editor.getValue());
+					}
+					return true;
+				}
+			}
+		});
+
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new SampleSettingTab(this.app, this));
 
@@ -76,6 +99,72 @@ export default class MyPlugin extends Plugin {
 
 		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
 		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+	}
+
+	async createPdf(title: string, content: string) {
+		const pdfDoc = await PDFDocument.create();
+		const page = pdfDoc.addPage();
+		const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+		const { width, height } = page.getSize();
+		const fontSize = 12;
+		const margin = 50;
+
+		// Draw header
+		if (this.settings.headerText) {
+			page.drawText(this.settings.headerText, {
+				x: margin,
+				y: height - margin / 2,
+				size: fontSize,
+				font,
+				color: rgb(0, 0, 0),
+			});
+		}
+
+		// Draw footer
+		if (this.settings.footerText) {
+			page.drawText(this.settings.footerText, {
+				x: margin,
+				y: margin / 2,
+				size: fontSize,
+				font,
+				color: rgb(0, 0, 0),
+			});
+		}
+
+		// Draw content
+		page.drawText(content, {
+			x: margin,
+			y: height - margin - (this.settings.headerText ? fontSize + 10 : 0),
+			size: fontSize,
+			font,
+			color: rgb(0, 0, 0),
+			maxWidth: width - 2 * margin,
+			lineHeight: fontSize * 1.2,
+		});
+
+		// Draw watermark
+		if (this.settings.watermarkText) {
+			const watermarkText = this.settings.watermarkText;
+			const watermarkFontSize = 70;
+			const textWidth = font.widthOfTextAtSize(watermarkText, watermarkFontSize);
+			const textHeight = font.heightAtSize(watermarkFontSize);
+
+			page.drawText(watermarkText, {
+				x: width / 2 - textWidth / 2,
+				y: height / 2 - textHeight / 2,
+				size: watermarkFontSize,
+				font,
+				color: rgb(0.9, 0.9, 0.9),
+				opacity: 0.5,
+				rotate: degrees(this.settings.watermarkAngle),
+			});
+		}
+
+		const pdfBytes = await pdfDoc.save();
+		const fileName = `${title}.pdf`;
+		await this.app.vault.createBinary(fileName, pdfBytes);
+		new Notice(`PDF saved as ${fileName}`);
 	}
 
 	onunload() {
@@ -128,6 +217,50 @@ class SampleSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.settings.mySetting)
 				.onChange(async (value) => {
 					this.plugin.settings.mySetting = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Watermark Text')
+			.setDesc('Text to use as a watermark on the PDF.')
+			.addText(text => text
+				.setPlaceholder('Enter watermark text')
+				.setValue(this.plugin.settings.watermarkText)
+				.onChange(async (value) => {
+					this.plugin.settings.watermarkText = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Watermark Angle')
+			.setDesc('Angle of the watermark text in degrees (e.g., -45 for diagonal).')
+			.addText(text => text
+				.setPlaceholder('Enter angle')
+				.setValue(this.plugin.settings.watermarkAngle.toString())
+				.onChange(async (value) => {
+					this.plugin.settings.watermarkAngle = Number(value);
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Header Text')
+			.setDesc('Text to display in the header of the PDF.')
+			.addText(text => text
+				.setPlaceholder('Enter header text')
+				.setValue(this.plugin.settings.headerText)
+				.onChange(async (value) => {
+					this.plugin.settings.headerText = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Footer Text')
+			.setDesc('Text to display in the footer of the PDF.')
+			.addText(text => text
+				.setPlaceholder('Enter footer text')
+				.setValue(this.plugin.settings.footerText)
+				.onChange(async (value) => {
+					this.plugin.settings.footerText = value;
 					await this.plugin.saveSettings();
 				}));
 	}
